@@ -175,6 +175,23 @@
     100%{ opacity:0; transform:translate(-50%,-58%) scale(1); }
   }
 
+  /* ---------- ターンバナー（手番が変わった時だけ約1.1秒） ---------- */
+  #turn-banner{
+    position:fixed; left:50%; top:50%; z-index:70; min-width:200px; max-width:86vw;
+    transform:translate(-50%,-50%) scale(.6); opacity:0; pointer-events:none;
+    text-align:center; border:3px solid var(--ink); border-radius:999px; padding:12px 26px;
+    background:var(--yellow); color:var(--ink); font-size:26px; font-weight:900; white-space:nowrap;
+    box-shadow:0 6px 0 rgba(22,38,76,.3);
+  }
+  #turn-banner.show{ animation:turnpop 1.15s ease both; }
+  @keyframes turnpop{
+    0%{ opacity:0; transform:translate(-50%,-50%) scale(.6); }
+    15%{ opacity:1; transform:translate(-50%,-50%) scale(1.06); }
+    25%{ transform:translate(-50%,-50%) scale(1); }
+    78%{ opacity:1; }
+    100%{ opacity:0; transform:translate(-50%,-58%) scale(1); }
+  }
+
   /* ---------- カードのフリップ／出現／飛行 ---------- */
   .card.flip-in{ animation:flipIn .6s ease both; }
   @keyframes flipIn{
@@ -314,6 +331,9 @@
 <!-- ===== アタック結果バナー ===== -->
 <div id="fx-banner"><div id="fx-main"></div><div id="fx-sub"></div></div>
 
+<!-- ===== ターンバナー ===== -->
+<div id="turn-banner"></div>
+
 <!-- ===== 数字パッド（シート） ===== -->
 <div class="sheet-wrap" id="pad-wrap">
   <div class="sheet">
@@ -401,6 +421,8 @@ let resultShown = false;
 let selfLeaving = false;  // 自分から退出・解散した時は解散通知を出さない
 let prevSnap = null;      // 演出検知用：前回描画時の状態スナップショット
 let fxTimer = null;
+let fxUntil = 0;          // 結果バナーが消える時刻（ターンバナーを後ろにずらす判定用）
+let turnTimer = null;
 
 const configReady = window.FIREBASE_CONFIG && !String(window.FIREBASE_CONFIG.apiKey).includes("YOUR_");
 if (!configReady) {
@@ -762,6 +784,7 @@ function snapOf(r) {
   }
   return {
     status: r.status,
+    turnSeat: (typeof r.turnSeat === "number" ? r.turnSeat : -1),
     deckLen: (r.deck || []).length,
     drawn: r.drawn ? { c: r.drawn.c, n: r.drawn.n } : null,
     log: [...(r.log || [])],
@@ -836,7 +859,24 @@ function showFxBanner(b) {
   void el.offsetWidth; // アニメーション再スタート
   el.className = "show " + b.type;
   clearTimeout(fxTimer);
+  fxUntil = Date.now() + 2100;
   fxTimer = setTimeout(() => { el.className = ""; }, 2100);
+}
+
+/* ターンバナー：手番が変わった時だけ約1.15秒表示する。
+   結果バナーが表示中／この描画で表示予定の場合は、結果バナーを優先して後ろにずらす */
+function showTurnBanner(name, seat, delayMs) {
+  clearTimeout(turnTimer);
+  const wait = Math.max(delayMs || 0, fxUntil - Date.now());
+  turnTimer = setTimeout(() => {
+    if (!room || room.status !== "playing" || room.turnSeat !== seat) return; // 状況が変わっていたら出さない
+    const el = $("turn-banner");
+    el.textContent = name + " のターン";
+    el.className = "";
+    void el.offsetWidth; // アニメーション再スタート
+    el.className = "show";
+    setTimeout(() => { el.className = ""; }, 1250);
+  }, wait);
 }
 
 /* fromRect から toRect へカードのクローンを飛ばす。reveal=true なら移動中にめくれて数字が見える */
@@ -971,7 +1011,16 @@ function renderGame() {
   /* 演出用：再描画前に「引いたカード」の表示位置を測り、状態差分からイベントを割り出す */
   const prevDrawnEl = $("drawn-box").querySelector(".deck-card");
   const drawnRect = prevDrawnEl ? prevDrawnEl.getBoundingClientRect() : null;
-  const fx = computeFx(prevSnap, snapOf(room));
+  const curSnap = snapOf(room);
+  const fx = computeFx(prevSnap, curSnap);
+  /* ターン切り替わり検知：手番（turnSeat）が前回描画から変わった時だけ拾う。
+     対戦開始直後（lobby→playing）・再戦（finished→playing）も「開始」として含める。
+     prevSnap は描画末尾で毎回更新されるため、同じターンの再描画では二重に出ない */
+  let turnInfo = null;
+  if (room.status === "playing" && prevSnap && (prevSnap.status !== "playing" || prevSnap.turnSeat !== curSnap.turnSeat)) {
+    const cp0 = currentPlayer(room);
+    if (cp0) turnInfo = { name: cp0.name, seat: room.turnSeat };
+  }
 
   $("game-code").textContent = roomCode;
   const ps = playersBySeat(room);
@@ -1101,8 +1150,10 @@ function renderGame() {
   if ((room.log || []).length !== lastLogLen) { lastLogLen = (room.log || []).length; renderLog(); }
 
   /* 演出：状態を記録し、差分イベントを描画後のレイアウトで再生する */
-  prevSnap = snapOf(room);
+  prevSnap = curSnap;
   if (fx) requestAnimationFrame(() => applyFx(fx, drawnRect));
+  /* ターンバナー：結果バナーがこの描画で出る場合は、その表示が終わってから出す */
+  if (turnInfo) showTurnBanner(turnInfo.name, turnInfo.seat, fx && fx.banner ? 2150 : 0);
 }
 
 function renderLog() {
