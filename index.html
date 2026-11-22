@@ -186,7 +186,7 @@
   @keyframes dealIn{ from{ transform:translateY(-16px) scale(.5); opacity:0; } to{ transform:translateY(0) scale(1); opacity:1; } }
   .fly-card{
     position:fixed; z-index:90; pointer-events:none; perspective:700px;
-    transition:transform .5s cubic-bezier(.3,.7,.3,1), width .5s ease, height .5s ease;
+    transition:transform .68s cubic-bezier(.3,.7,.3,1), width .68s ease, height .68s ease;
   }
   .fly-inner{ width:100%; height:100%; position:relative; transform-style:preserve-3d; }
   .fly-inner.do-flip{ transition:transform .45s ease .12s; transform:rotateY(180deg); }
@@ -293,6 +293,7 @@
     <span>
       <button class="btn white small" id="btn-open-log">ログ</button>
       <button class="btn white small" id="btn-open-rules2">ルール</button>
+      <button class="btn white small" id="btn-quit">やめる</button>
     </span>
   </div>
   <div class="banner" id="banner">…</div>
@@ -348,6 +349,18 @@
   </div>
 </div>
 
+<!-- ===== やめる確認（モーダル） ===== -->
+<div class="modal-wrap" id="quit-wrap">
+  <div class="modal">
+    <div class="big">対戦をやめる？</div>
+    <p id="quit-text">タイトルに戻ります。</p>
+    <div class="stack" style="margin-top:14px;">
+      <button class="btn pink" id="btn-quit-yes">やめる</button>
+      <button class="btn white" id="btn-quit-no">もどる</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== 結果（モーダル） ===== -->
 <div class="modal-wrap" id="result-wrap">
   <div class="modal">
@@ -385,6 +398,7 @@ let selectedTarget = null; // { uid, idx }
 let padTarget = null;
 let lastLogLen = 0;
 let resultShown = false;
+let selfLeaving = false;  // 自分から退出・解散した時は解散通知を出さない
 let prevSnap = null;      // 演出検知用：前回描画時の状態スナップショット
 let fxTimer = null;
 
@@ -482,14 +496,31 @@ async function pushLog(code, baseRoom, text) {
 
 function enterRoom(code) {
   roomCode = code;
+  selfLeaving = false;
   $("home-msg").textContent = "";
   if (roomListener) roomListener();
   roomListener = onValue(ref(db, "rooms/" + code), (snap) => {
-    if (!snap.exists()) { room = null; return; }
+    if (!snap.exists()) {
+      /* ルームが消えた＝ホスト退出で解散（自分が消した場合は通知しない） */
+      if (roomCode === code && room && !selfLeaving) onRoomDissolved();
+      else room = null;
+      return;
+    }
     room = snap.val();
     render();
   });
   show("screen-lobby");
+}
+
+/* ホストが対戦をやめてルームが解散した時の後片付け（参加者側） */
+function onRoomDissolved() {
+  if (roomListener) { roomListener(); roomListener = null; }
+  roomCode = null; room = null; selectedTarget = null; prevSnap = null; resultShown = false;
+  $("result-wrap").classList.remove("open");
+  $("quit-wrap").classList.remove("open");
+  closeSheet("pad-wrap"); closeSheet("log-wrap"); closeSheet("rules-wrap");
+  showFxBanner({ type: "miss", main: "ルーム解散", sub: "ホストが退出したので対戦を終了します" });
+  setTimeout(() => show("screen-title"), 500);
 }
 
 async function leaveRoom(backToHome = true) {
@@ -665,6 +696,61 @@ async function doContinue() {
   await saveRoom(r);
 }
 
+/* ================= 対戦をやめる ================= */
+/* ゲスト退出の状態変換（純粋関数）：全カードを表にして脱落扱いにし、
+   残り1人なら勝敗を確定、退出者が手番なら次の生存者へ回す。書き込み不要なら null */
+function applyQuit(r, uid) {
+  const p = r.players && r.players[uid];
+  if (!p || r.status !== "playing" || p.eliminated) return null;
+  p.cards = p.cards.map((c) => ({ ...c, open: true }));
+  p.eliminated = true;
+  r.log = [...(r.log || []), p.name + " が対戦をやめました"];
+  const alive = alivePlayers(r);
+  if (alive.length <= 1) {
+    r.status = "finished";
+    r.drawn = null;
+    if (alive.length === 1) {
+      r.winnerSeat = alive[0].seat;
+      r.log.push("🏆 " + alive[0].name + " の勝ち！");
+    }
+  } else if (r.turnSeat === p.seat) {
+    r.drawn = null;
+    endTurn(r); // phase は "draw" に戻り、次の生存者へ手番が移る
+  }
+  return r;
+}
+
+async function quitGame() {
+  if (!roomCode || !room) { show("screen-title"); return; }
+  const code = roomCode;
+  const wasHost = room.hostUid === myUid;
+  const st = room.status;
+  const snapshot = clone(room);
+  /* 先に購読を止めて自分の画面を片付ける（自分の書き込みで再描画しない） */
+  selfLeaving = true;
+  if (roomListener) { roomListener(); roomListener = null; }
+  roomCode = null; room = null; selectedTarget = null; prevSnap = null; resultShown = false;
+  $("result-wrap").classList.remove("open");
+  show("screen-title");
+  try {
+    if (st === "playing" && wasHost) {
+      await set(ref(db, "rooms/" + code), null); // ホスト退出＝ルーム解散
+    } else if (st === "playing") {
+      const nr = applyQuit(snapshot, myUid);
+      if (nr) { nr.log = (nr.log || []).slice(-60); await set(ref(db, "rooms/" + code), nr); }
+    }
+  } catch (e) { console.error(e); }
+}
+$("btn-quit").addEventListener("click", () => {
+  if (!room || room.status !== "playing") return;
+  $("quit-text").textContent = room.hostUid === myUid
+    ? "ホストがやめるとルームは解散して、全員の対戦が終わります。"
+    : "やめると脱落扱いになって、この対戦には戻れません。";
+  $("quit-wrap").classList.add("open");
+});
+$("btn-quit-no").addEventListener("click", () => $("quit-wrap").classList.remove("open"));
+$("btn-quit-yes").addEventListener("click", () => { $("quit-wrap").classList.remove("open"); quitGame(); });
+
 /* ================= 演出（結果バナー／フリップ／飛行） ================= */
 /* カードは色+数字で一意なので、それをキーに前回状態と差分を取る */
 function snapOf(r) {
@@ -709,7 +795,11 @@ function computeFx(prev, cur) {
   const miss = newLogs.find((l) => l.includes("ハズレ"));
   const flipFollow = newLogs.find((l) => l.includes("が表で置かれました"));
   const penalty = newLogs.find((l) => l.includes("を表にしました"));
-  if (hit) {
+  const quit = newLogs.find((l) => l.includes("が対戦をやめました"));
+  if (quit) {
+    const nm = quit.split(" が対戦をやめました")[0];
+    ev.banner = { type: "miss", main: "退出", sub: dispName(nm) + " が対戦をやめました" };
+  } else if (hit) {
     const m = hit.match(/→ (.+) のカードは「(\d+)」/);
     ev.banner = { type: "hit", main: "アタリ！", sub: m ? dispName(m[1]) + " の「" + m[2] + "」を当てた！" : "" };
   } else if (miss) {
@@ -782,7 +872,7 @@ function flyCard(fromRect, toRect, opts) {
     el.style.height = th + "px";
     if (opts.reveal) inner.classList.add("do-flip");
   });
-  setTimeout(() => el.remove(), 620);
+  setTimeout(() => el.remove(), 820);
 }
 
 /* 描画後に演出を適用する */
@@ -800,7 +890,7 @@ function applyFx(ev, drawnRect) {
     if (drawnRect) {
       el.style.visibility = "hidden";
       flyCard(drawnRect, el.getBoundingClientRect(), { card, reveal: ins.open });
-      setTimeout(() => { el.style.visibility = ""; }, 540);
+      setTimeout(() => { el.style.visibility = ""; }, 740);
     } else {
       el.classList.add("deal-in");
     }
@@ -813,7 +903,7 @@ function applyFx(ev, drawnRect) {
         const to = dc.getBoundingClientRect();
         dc.style.visibility = "hidden";
         flyCard(from, to, { card: ev.draw.card, reveal: true });
-        setTimeout(() => { dc.style.visibility = ""; }, 540);
+        setTimeout(() => { dc.style.visibility = ""; }, 740);
       }
     } else {
       const rowEl = document.querySelector('.player-block[data-uid="' + ev.draw.uid + '"] .cards');
