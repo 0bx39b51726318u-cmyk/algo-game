@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>アルゴ | 数字推理カードゲーム</title>
+<meta name="theme-color" content="#ffffff">
+<style>
+  :root{
+    --ink:#16264c; --yellow:#ffd93d; --pink:#ff6b9d; --teal:#2ec4b6;
+    --paper:#ffffff; --soft:#f2f6ff; --red:#ff5252;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ height:100%; margin:0; padding:0; overflow:hidden; overscroll-behavior:none; }
+  body{
+    font-family:"Hiragino Maru Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif;
+    background:var(--paper); color:var(--ink); font-weight:700;
+    height:100dvh; position:fixed; inset:0; touch-action:manipulation;
+  }
+  button{ font-family:inherit; font-weight:800; cursor:pointer; }
+  input{ font-family:inherit; font-weight:700; }
+
+  .screen{ display:none; height:100dvh; flex-direction:column; padding:14px 16px calc(14px + env(safe-area-inset-bottom)); }
+  .screen.active{ display:flex; }
+
+  /* ---------- 共通ボタン ---------- */
+  .btn{
+    border:3px solid var(--ink); border-radius:999px; background:var(--yellow); color:var(--ink);
+    padding:12px 22px; font-size:17px; box-shadow:0 4px 0 var(--ink); transition:transform .06s, box-shadow .06s;
+  }
+  .btn:active{ transform:translateY(4px); box-shadow:0 0 0 var(--ink); }
+  .btn.pink{ background:var(--pink); color:#fff; }
+  .btn.teal{ background:var(--teal); color:#fff; }
+  .btn.white{ background:#fff; }
+  .btn:disabled{ opacity:.45; cursor:not-allowed; }
+  .btn.small{ padding:7px 14px; font-size:14px; border-width:2px; box-shadow:0 3px 0 var(--ink); }
+  .btn.small:active{ transform:translateY(3px); box-shadow:0 0 0 var(--ink); }
+
+  /* ---------- タイトル画面 ---------- */
+  #screen-title{ align-items:center; justify-content:center; text-align:center; gap:10px; }
+  .logo-cards{ display:flex; gap:8px; margin-bottom:2px; }
+  .mini-card{
+    width:44px; height:62px; border-radius:9px; border:3px solid var(--ink);
+    display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:900;
+    animation:floaty 2.6s ease-in-out infinite;
+  }
+  .mini-card.b{ background:#232323; color:#fff; }
+  .mini-card.w{ background:#fff; color:var(--ink); }
+  .mini-card:nth-child(2){ animation-delay:.3s; } .mini-card:nth-child(3){ animation-delay:.6s; } .mini-card:nth-child(4){ animation-delay:.9s; }
+  @keyframes floaty{ 0%,100%{ transform:translateY(0) rotate(-3deg);} 50%{ transform:translateY(-9px) rotate(3deg);} }
+  .logo{
+    font-size:min(26vw,110px); line-height:1; font-weight:900; letter-spacing:.04em; margin:0;
+    animation:pop .55s cubic-bezier(.2,2.2,.4,1) both;
+  }
+  .logo .l1{ color:var(--pink); } .logo .l2{ color:var(--teal); }
+  @keyframes pop{ from{ transform:scale(.2); opacity:0;} to{ transform:scale(1); opacity:1;} }
+  .tagline{ font-size:15px; margin:2px 0 18px; }
+  .dots{ display:flex; gap:7px; justify-content:center; margin-top:16px; }
+  .dots i{ width:11px; height:11px; border-radius:50%; border:2px solid var(--ink); display:block; }
+  .dots i:nth-child(1){ background:var(--yellow);} .dots i:nth-child(2){ background:var(--pink);} .dots i:nth-child(3){ background:var(--teal);}
+
+  /* ---------- ホーム（名前・ルーム） ---------- */
+  h2.title{ font-size:24px; margin:4px 0 10px; text-align:center; }
+  .step-label{ font-size:12px; letter-spacing:.14em; color:#5a6c96; text-align:center; margin-bottom:8px; }
+  .field{ width:100%; max-width:420px; margin:0 auto 14px; }
+  .field label{ display:block; font-size:14px; margin-bottom:6px; }
+  .field input{
+    width:100%; border:3px solid var(--ink); border-radius:14px; padding:12px 14px; font-size:17px; background:#fff; outline:none;
+  }
+  .field input:focus{ background:var(--soft); }
+  .stack{ display:flex; flex-direction:column; gap:12px; width:100%; max-width:420px; margin:0 auto; }
+  .divider{ text-align:center; font-size:13px; color:#5a6c96; }
+  .join-row{ display:flex; gap:10px; }
+  .join-row input{ flex:1; text-transform:uppercase; text-align:center; letter-spacing:.35em; font-size:20px; }
+  .msg{ min-height:22px; text-align:center; font-size:14px; color:var(--red); max-width:420px; margin:8px auto 0; }
+  .note{ font-size:12px; color:#5a6c96; text-align:center; margin-top:auto; line-height:1.6; }
+
+  /* ---------- ロビー ---------- */
+  .code-panel{
+    background:var(--yellow); border:3px solid var(--ink); border-radius:18px; box-shadow:0 5px 0 var(--ink);
+    padding:12px; text-align:center; max-width:420px; width:100%; margin:0 auto 14px;
+  }
+  .code-panel .cap{ font-size:12px; letter-spacing:.16em; }
+  .code-panel .code{ font-size:42px; font-weight:900; letter-spacing:.3em; margin-left:.3em; line-height:1.15; }
+  .seats{ display:grid; grid-template-columns:1fr 1fr; gap:10px; max-width:420px; width:100%; margin:0 auto 14px; }
+  .seat{
+    border:3px solid var(--ink); border-radius:16px; padding:12px; min-height:74px; background:#fff;
+    display:flex; flex-direction:column; justify-content:center; gap:2px;
+  }
+  .seat.filled.s0{ background:#fff3bf; } .seat.filled.s1{ background:#ffd6e7; }
+  .seat.filled.s2{ background:#c9f2ec; } .seat.filled.s3{ background:#dbe7ff; }
+  .seat.empty{ border-style:dashed; color:#8b99bb; align-items:center; }
+  .seat .nm{ font-size:17px; } .seat .tag{ font-size:12px; color:#5a6c96; }
+
+  /* ---------- 対戦画面 ---------- */
+  #screen-game{ padding:10px 12px calc(10px + env(safe-area-inset-bottom)); gap:8px; }
+  .game-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .game-head .roomtag{ font-size:13px; background:var(--soft); border:2px solid var(--ink); border-radius:999px; padding:3px 12px; }
+  .banner{
+    border:3px solid var(--ink); border-radius:14px; padding:8px 12px; text-align:center; font-size:15px;
+    background:var(--soft); min-height:44px; display:flex; align-items:center; justify-content:center;
+  }
+  .banner.myturn{ background:var(--yellow); }
+  .opponents{ display:flex; flex-direction:column; gap:8px; flex:1; min-height:0; }
+  .player-block{ border:3px solid var(--ink); border-radius:16px; padding:8px 10px; background:#fff; }
+  .player-block.turn{ box-shadow:0 0 0 3px var(--yellow), 0 0 0 6px var(--ink); }
+  .player-block.dead{ opacity:.5; }
+  .player-head{ display:flex; justify-content:space-between; align-items:center; font-size:14px; margin-bottom:6px; }
+  .player-head .who{ display:flex; gap:6px; align-items:center; }
+  .badge{ font-size:11px; border:2px solid var(--ink); border-radius:999px; padding:1px 8px; background:var(--teal); color:#fff; }
+  .badge.out{ background:var(--red); }
+  .cards{ display:flex; gap:5px; flex-wrap:nowrap; }
+  .card{
+    flex:1 1 0; max-width:56px; aspect-ratio:5/7; border-radius:8px; border:3px solid var(--ink);
+    display:flex; align-items:center; justify-content:center; font-weight:900; font-size:clamp(13px,4.4vw,21px);
+    user-select:none; position:relative; background:#fff;
+  }
+  .card.b{ background:#232323; color:#fff; }
+  .card.w{ background:#fff; color:var(--ink); }
+  .card.hidden-num{ font-size:0; }
+  .card.hidden-num::after{ content:"?"; font-size:clamp(12px,4vw,18px); opacity:.55; }
+  .card.targetable{ cursor:pointer; animation:pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.07);} }
+  .card.selected{ outline:4px solid var(--pink); outline-offset:1px; }
+  .card.open{ box-shadow:inset 0 0 0 3px var(--yellow); }
+  .card.just{ animation:pop .4s cubic-bezier(.2,2.2,.4,1) both; }
+  .myarea{ border:3px solid var(--ink); border-radius:16px; padding:8px 10px; background:#fffbe8; }
+  .deck-row{ display:flex; align-items:center; gap:10px; justify-content:space-between; }
+  .deck-info{ display:flex; align-items:center; gap:8px; font-size:14px; }
+  .deck-card{
+    width:38px; height:52px; border-radius:7px; border:3px solid var(--ink);
+    display:flex; align-items:center; justify-content:center; font-weight:900; font-size:15px;
+  }
+  .deck-card.b{ background:#232323; color:#fff; } .deck-card.w{ background:#fff; }
+  .deck-card.clickable{ cursor:pointer; animation:pulse 1.1s ease-in-out infinite; }
+  .drawn-box{ display:flex; align-items:center; gap:8px; font-size:14px; }
+  .actions{ display:flex; gap:10px; }
+  .actions .btn{ flex:1; }
+
+  /* ---------- シート / モーダル ---------- */
+  .sheet-wrap{
+    position:fixed; inset:0; background:rgba(22,38,76,.45); display:none; z-index:50;
+    align-items:flex-end; justify-content:center;
+  }
+  .sheet-wrap.open{ display:flex; }
+  .sheet{
+    background:#fff; width:100%; max-width:520px; border:3px solid var(--ink); border-bottom:none;
+    border-radius:22px 22px 0 0; padding:16px 16px calc(18px + env(safe-area-inset-bottom));
+    animation:up .25s ease both; max-height:82dvh; display:flex; flex-direction:column;
+  }
+  @keyframes up{ from{ transform:translateY(40px); opacity:0;} to{ transform:translateY(0); opacity:1;} }
+  .sheet h3{ margin:0 0 10px; font-size:18px; text-align:center; }
+  .pad{ display:grid; grid-template-columns:repeat(4,1fr); gap:9px; }
+  .pad button{
+    border:3px solid var(--ink); border-radius:14px; background:var(--soft); font-size:21px; padding:13px 0;
+    box-shadow:0 3px 0 var(--ink);
+  }
+  .pad button:active{ transform:translateY(3px); box-shadow:0 0 0 var(--ink); }
+  .log-body{ overflow-y:auto; font-size:14px; line-height:1.7; min-height:0; }
+  .log-body div{ border-bottom:1px dashed #c6d2ee; padding:3px 0; }
+  .rules-body{ overflow-y:auto; font-size:14px; line-height:1.8; min-height:0; }
+  .sheet .close-row{ margin-top:12px; display:flex; }
+  .sheet .close-row .btn{ flex:1; }
+
+  .modal-wrap{ position:fixed; inset:0; background:rgba(22,38,76,.5); display:none; z-index:60; align-items:center; justify-content:center; padding:20px; }
+  .modal-wrap.open{ display:flex; }
+  .modal{ background:#fff; border:3px solid var(--ink); border-radius:22px; padding:22px; text-align:center; max-width:380px; width:100%; box-shadow:0 6px 0 var(--ink); }
+  .modal .big{ font-size:30px; font-weight:900; margin:4px 0 8px; }
+  .trophy{ font-size:52px; animation:pop .6s cubic-bezier(.2,2.2,.4,1) both; }
+</style>
+</head>
+<body>
+
+<!-- ===== タイトル ===== -->
+<section id="screen-title" class="screen active">
+  <div class="logo-cards">
+    <div class="mini-card b">3</div><div class="mini-card w">7</div><div class="mini-card b">0</div><div class="mini-card w">11</div>
+  </div>
+  <h1 class="logo"><span class="l1">アル</span><span class="l2">ゴ</span></h1>
+  <p class="tagline">黒と白のカード、0〜11。<br>相手の数字を推理して当てよう！</p>
+  <button class="btn pink" id="btn-to-home" style="font-size:20px; padding:14px 34px;">ゲームスタート</button>
+  <div class="dots"><i></i><i></i><i></i></div>
+  <p class="note" id="setup-warning" style="display:none; color:var(--red); font-weight:800;">
+    Firebase の設定がまだです。firebase-config.js に接続設定を入れてください（README参照）。
+  </p>
+</section>
+
+<!-- ===== ホーム（名前・作成/参加） ===== -->
+<section id="screen-home" class="screen">
+  <div class="step-label">STEP 1 ・ 2</div>
+  <h2 class="title">じゅんび</h2>
+  <div class="field">
+    <label for="inp-name">あなたの名前</label>
+    <input id="inp-name" type="text" maxlength="10" placeholder="なまえ" autocomplete="off">
+  </div>
+  <div class="stack">
+    <button class="btn" id="btn-create">ルームを作る（ホスト）</button>
+    <div class="divider">― または ―</div>
+    <div class="join-row">
+      <input id="inp-code" type="text" maxlength="4" placeholder="CODE" autocomplete="off">
+      <button class="btn teal" id="btn-join">参加</button>
+    </div>
+    <button class="btn white small" id="btn-open-rules1">遊び方・ルール</button>
+  </div>
+  <p class="msg" id="home-msg"></p>
+  <p class="note">2〜4人で対戦できます。友達はそれぞれ自分の端末で<br>このページを開いて、同じルームコードで参加してね。</p>
+</section>
+
+<!-- ===== ロビー ===== -->
+<section id="screen-lobby" class="screen">
+  <div class="step-label">STEP 3</div>
+  <h2 class="title">メンバー待ち</h2>
+  <div class="code-panel">
+    <div class="cap">ルームコード</div>
+    <div class="code" id="lobby-code">----</div>
+  </div>
+  <div class="seats" id="lobby-seats"></div>
+  <div class="stack">
+    <button class="btn pink" id="btn-start">対戦スタート！</button>
+    <button class="btn white small" id="btn-leave">ルームを出る</button>
+  </div>
+  <p class="msg" id="lobby-msg"></p>
+  <p class="note" id="lobby-note">ホストがスタートを押すと対戦が始まります。</p>
+</section>
+
+<!-- ===== 対戦 ===== -->
+<section id="screen-game" class="screen">
+  <div class="game-head">
+    <span class="roomtag">ルーム <b id="game-code">----</b></span>
+    <span>
+      <button class="btn white small" id="btn-open-log">ログ</button>
+      <button class="btn white small" id="btn-open-rules2">ルール</button>
+    </span>
+  </div>
+  <div class="banner" id="banner">…</div>
+  <div class="opponents" id="opponents"></div>
+  <div class="deck-row">
+    <div class="deck-info">
+      <div class="deck-card b" id="deck-card">?</div>
+      <span>山札 <b id="deck-count">0</b> 枚</span>
+    </div>
+    <div class="drawn-box" id="drawn-box"></div>
+  </div>
+  <div class="myarea" id="myarea"></div>
+  <div class="actions" id="actions"></div>
+</section>
+
+<!-- ===== 数字パッド（シート） ===== -->
+<div class="sheet-wrap" id="pad-wrap">
+  <div class="sheet">
+    <h3 id="pad-title">数字を宣言！</h3>
+    <div class="pad" id="pad"></div>
+    <div class="close-row"><button class="btn white" id="btn-pad-cancel">やめる</button></div>
+  </div>
+</div>
+
+<!-- ===== ログ（シート） ===== -->
+<div class="sheet-wrap" id="log-wrap">
+  <div class="sheet">
+    <h3>対戦ログ</h3>
+    <div class="log-body" id="log-body"></div>
+    <div class="close-row"><button class="btn white" id="btn-log-close">閉じる</button></div>
+  </div>
+</div>
+
+<!-- ===== ルール（シート） ===== -->
+<div class="sheet-wrap" id="rules-wrap">
+  <div class="sheet">
+    <h3>遊び方・ルール</h3>
+    <div class="rules-body">
+      <p>・黒と白のカード各0〜11、全24枚を使う推理ゲーム。全員敵の個人戦だよ。</p>
+      <p>・最初に1人4枚ずつ配られ、数字の小さい順に左から並ぶ（同じ数字なら黒が左）。自分の数字だけ見える。</p>
+      <p>・自分の番：山札から1枚引いて自分だけ見る → 誰かの伏せカードを選んで数字を宣言（アタック）。</p>
+      <p>・当たればそのカードが表になる。続けてアタックしてもいいし、「やめる」と引いたカードを伏せたまま自分の列の正しい位置に入れて番が終わる。</p>
+      <p>・外れたら、引いたカードが表向きで自分の列に入って番が終わる。</p>
+      <p>・山札が尽きたら引かずにアタックだけ続ける。外したら自分の伏せカードを1枚表にしなきゃいけない。</p>
+      <p>・自分のカードが全部表になったら脱落。最後まで残った1人が勝ち！</p>
+    </div>
+    <div class="close-row"><button class="btn white" id="btn-rules-close">閉じる</button></div>
+  </div>
+</div>
+
+<!-- ===== 結果（モーダル） ===== -->
+<div class="modal-wrap" id="result-wrap">
+  <div class="modal">
+    <div class="trophy">🏆</div>
+    <div class="big" id="result-title">勝ち！</div>
+    <p id="result-text"></p>
+    <div class="stack" style="margin-top:14px;">
+      <button class="btn pink" id="btn-rematch">もう一戦（ホスト）</button>
+      <button class="btn white" id="btn-result-log">ログを見る</button>
+      <button class="btn white small" id="btn-to-title">タイトルへ戻る</button>
+    </div>
+    <p class="note" id="rematch-note"></p>
+  </div>
+</div>
+
+<script src="firebase-config.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getDatabase, ref, set, get, update, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+/* ================= 基本 ================= */
+const $ = (id) => document.getElementById(id);
+const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const sortKey = (card) => card.n * 2 + (card.c === "W" ? 1 : 0); // 同数字は黒が左
+const sortCards = (arr) => [...arr].sort((a, b) => sortKey(a) - sortKey(b));
+const clone = (o) => JSON.parse(JSON.stringify(o));
+
+let app, auth, db;
+let myUid = null;
+let roomCode = null;
+let room = null;          // 最新のルーム状態（スナップショット）
+let roomListener = null;
+let selectedTarget = null; // { uid, idx }
+let padTarget = null;
+let lastLogLen = 0;
+let resultShown = false;
+
+const configReady = window.FIREBASE_CONFIG && !String(window.FIREBASE_CONFIG.apiKey).includes("YOUR_");
+if (!configReady) {
+  $("setup-warning").style.display = "block";
+} else {
+  app = initializeApp(window.FIREBASE_CONFIG);
+  auth = getAuth(app);
+  db = getDatabase(app);
+  signInAnonymously(auth).catch((e) => console.error(e));
+  onAuthStateChanged(auth, (u) => { if (u) myUid = u.uid; });
+}
+
+/* ================= 画面遷移 ================= */
+function show(id) {
+  document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
+  $(id).classList.add("active");
+}
+$("btn-to-home").addEventListener("click", () => show("screen-home"));
+$("btn-to-title").addEventListener("click", () => { $("result-wrap").classList.remove("open"); leaveRoom(false); show("screen-title"); });
+
+/* ================= シート開閉 ================= */
+function openSheet(id) { $(id).classList.add("open"); }
+function closeSheet(id) { $(id).classList.remove("open"); }
+$("btn-open-rules1").addEventListener("click", () => openSheet("rules-wrap"));
+$("btn-open-rules2").addEventListener("click", () => openSheet("rules-wrap"));
+$("btn-rules-close").addEventListener("click", () => closeSheet("rules-wrap"));
+$("btn-open-log").addEventListener("click", () => { renderLog(); openSheet("log-wrap"); });
+$("btn-log-close").addEventListener("click", () => closeSheet("log-wrap"));
+$("btn-result-log").addEventListener("click", () => { $("result-wrap").classList.remove("open"); renderLog(); openSheet("log-wrap"); });
+$("btn-pad-cancel").addEventListener("click", () => { closeSheet("pad-wrap"); padTarget = null; });
+
+/* 数字パッド生成 */
+for (let n = 0; n <= 11; n++) {
+  const b = document.createElement("button");
+  b.textContent = n;
+  b.addEventListener("click", () => { if (padTarget) doAttack(padTarget.uid, padTarget.idx, n); closeSheet("pad-wrap"); padTarget = null; });
+  $("pad").appendChild(b);
+}
+
+/* ================= ルーム作成・参加 ================= */
+function myName() {
+  const v = $("inp-name").value.trim();
+  return v || "プレイヤー";
+}
+function genCode() {
+  let s = "";
+  for (let i = 0; i < 4; i++) s += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+  return s;
+}
+function newPlayer(uid, name, seat) {
+  return { uid, name, seat, cards: [], eliminated: false };
+}
+
+$("btn-create").addEventListener("click", async () => {
+  if (!configReady || !myUid) { $("home-msg").textContent = "接続の準備ができていません。少し待ってね。"; return; }
+  let code = genCode();
+  for (let t = 0; t < 5; t++) {
+    const snap = await get(ref(db, "rooms/" + code));
+    if (!snap.exists()) break;
+    code = genCode();
+  }
+  const data = {
+    hostUid: myUid, status: "lobby", createdAt: Date.now(),
+    players: { [myUid]: newPlayer(myUid, myName(), 0) },
+    deck: [], turnSeat: 0, phase: "draw", drawn: null,
+    log: [myName() + " がルームを作りました"], winnerSeat: -1
+  };
+  await set(ref(db, "rooms/" + code), data);
+  enterRoom(code);
+});
+
+$("btn-join").addEventListener("click", async () => {
+  if (!configReady || !myUid) { $("home-msg").textContent = "接続の準備ができていません。少し待ってね。"; return; }
+  const code = $("inp-code").value.trim().toUpperCase();
+  if (code.length !== 4) { $("home-msg").textContent = "ルームコードは4文字だよ。"; return; }
+  const snap = await get(ref(db, "rooms/" + code));
+  if (!snap.exists()) { $("home-msg").textContent = "そのルームは見つかりませんでした。"; return; }
+  const r = snap.val();
+  if (r.status !== "lobby") { $("home-msg").textContent = "そのルームはもう対戦中です。"; return; }
+  const players = Object.values(r.players || {});
+  if (players.length >= 4) { $("home-msg").textContent = "そのルームは満席です。"; return; }
+  if (r.players && r.players[myUid]) { enterRoom(code); return; }
+  const seat = players.length ? Math.max(...players.map((p) => p.seat)) + 1 : 0;
+  await update(ref(db, "rooms/" + code + "/players/" + myUid), newPlayer(myUid, myName(), seat));
+  await pushLog(code, r, myName() + " が参加しました");
+  enterRoom(code);
+});
+
+async function pushLog(code, baseRoom, text) {
+  const log = [...(baseRoom.log || []), text].slice(-60);
+  await update(ref(db, "rooms/" + code), { log });
+}
+
+function enterRoom(code) {
+  roomCode = code;
+  $("home-msg").textContent = "";
+  if (roomListener) roomListener();
+  roomListener = onValue(ref(db, "rooms/" + code), (snap) => {
+    if (!snap.exists()) { room = null; return; }
+    room = snap.val();
+    render();
+  });
+  show("screen-lobby");
+}
+
+async function leaveRoom(backToHome = true) {
+  if (roomListener) { roomListener(); roomListener = null; }
+  if (roomCode && room && room.players && room.players[myUid] && room.status === "lobby") {
+    const players = clone(room.players);
+    delete players[myUid];
+    if (Object.keys(players).length === 0) {
+      await set(ref(db, "rooms/" + roomCode), null);
+    } else {
+      const rest = { players };
+      if (room.hostUid === myUid) rest.hostUid = Object.values(players).sort((a, b) => a.seat - b.seat)[0].uid;
+      await update(ref(db, "rooms/" + roomCode), rest);
+    }
+  }
+  roomCode = null; room = null; selectedTarget = null;
+  if (backToHome) show("screen-home");
+}
+$("btn-leave").addEventListener("click", () => leaveRoom(true));
+
+/* ================= 対戦開始・再戦 ================= */
+function buildDeck() {
+  const d = [];
+  for (const c of ["B", "W"]) for (let n = 0; n <= 11; n++) d.push({ c, n, open: false });
+  for (let i = d.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [d[i], d[j]] = [d[j], d[i]]; }
+  return d;
+}
+function startGame(base) {
+  const r = clone(base);
+  let deck = buildDeck();
+  const players = {};
+  for (const p of Object.values(r.players)) {
+    const hand = sortCards(deck.slice(0, 4));
+    deck = deck.slice(4);
+    players[p.uid] = { ...p, cards: hand, eliminated: false };
+  }
+  r.players = players;
+  r.deck = deck;
+  r.status = "playing";
+  r.turnSeat = Math.min(...Object.values(players).map((p) => p.seat));
+  r.phase = "draw"; r.drawn = null; r.winnerSeat = -1;
+  r.log = [...(r.log || []), "対戦スタート！"].slice(-60);
+  return r;
+}
+$("btn-start").addEventListener("click", async () => {
+  if (!room || room.hostUid !== myUid) return;
+  if (Object.keys(room.players || {}).length < 2) { $("lobby-msg").textContent = "2人以上でスタートできます。"; return; }
+  await set(ref(db, "rooms/" + roomCode), startGame(room));
+});
+$("btn-rematch").addEventListener("click", async () => {
+  if (!room || room.hostUid !== myUid) return;
+  $("result-wrap").classList.remove("open");
+  await set(ref(db, "rooms/" + roomCode), startGame(room));
+});
+
+/* ================= ゲームロジック ================= */
+function playersBySeat(r) { return Object.values(r.players || {}).sort((a, b) => a.seat - b.seat); }
+function currentPlayer(r) { return playersBySeat(r).find((p) => p.seat === r.turnSeat); }
+function isMyTurn() { const cp = room && currentPlayer(room); return cp && cp.uid === myUid; }
+
+function alivePlayers(r) { return playersBySeat(r).filter((p) => !p.eliminated); }
+function checkEliminations(r) {
+  for (const p of Object.values(r.players)) {
+    if (!p.eliminated && p.cards.length > 0 && p.cards.every((c) => c.open)) {
+      p.eliminated = true;
+      r.log.push(p.name + " のカードが全部表に！ 脱落…");
+    }
+  }
+  const alive = alivePlayers(r);
+  if (alive.length === 1) {
+    r.status = "finished";
+    r.winnerSeat = alive[0].seat;
+    r.log.push("🏆 " + alive[0].name + " の勝ち！");
+  }
+}
+function endTurn(r) {
+  const alive = alivePlayers(r);
+  if (r.status === "finished") return;
+  const seats = alive.map((p) => p.seat).sort((a, b) => a - b);
+  const next = seats.find((s) => s > r.turnSeat);
+  r.turnSeat = next !== undefined ? next : seats[0];
+  r.phase = "draw";
+  r.drawn = null;
+}
+function insertDrawn(r, player, open) {
+  const card = { ...r.drawn, open };
+  player.cards = sortCards([...player.cards, card]);
+  r.drawn = null;
+  return card;
+}
+async function saveRoom(r) {
+  r.log = (r.log || []).slice(-60);
+  await set(ref(db, "rooms/" + roomCode), r);
+}
+
+/* 山札を引く */
+$("deck-card").addEventListener("click", async () => {
+  if (!room || room.status !== "playing" || !isMyTurn()) return;
+  if (room.phase !== "draw") return;
+  const r = clone(room);
+  if (r.deck.length === 0) { r.phase = "attack"; await saveRoom(r); return; }
+  const card = r.deck[r.deck.length - 1];
+  r.deck = r.deck.slice(0, -1);
+  r.drawn = { c: card.c, n: card.n };
+  r.phase = "attack";
+  r.log.push(currentPlayer(r).name + " が山札を引きました");
+  await saveRoom(r);
+});
+
+/* アタック */
+async function doAttack(targetUid, idx, guess) {
+  if (!room || room.status !== "playing" || !isMyTurn()) return;
+  if (room.phase !== "attack" && room.phase !== "continue") return;
+  const r = clone(room);
+  const me = r.players[myUid];
+  const target = r.players[targetUid];
+  if (!target || target.eliminated) return;
+  const card = target.cards[idx];
+  if (!card || card.open) return;
+  selectedTarget = null;
+
+  if (card.n === guess) {
+    card.open = true;
+    r.log.push(me.name + " → " + target.name + " のカードは「" + guess + "」… 当たり！");
+    checkEliminations(r);
+    if (r.status === "finished") { await saveRoom(r); return; }
+    if (r.drawn) { r.phase = "decide"; }
+    else { r.phase = "continue"; } // 山札なし：続けてアタック可
+    await saveRoom(r);
+  } else {
+    r.log.push(me.name + " → " + target.name + " のカードは「" + guess + "」… ハズレ");
+    if (r.drawn) {
+      const placed = insertDrawn(r, me, true);
+      r.log.push(me.name + " の引いたカード（" + (placed.c === "B" ? "黒" : "白") + placed.n + "）が表で置かれました");
+      checkEliminations(r);
+      if (r.status !== "finished") endTurn(r);
+    } else {
+      r.phase = "penalty"; // 山札なしで外れ：自分の伏せカードを1枚表にする
+    }
+    await saveRoom(r);
+  }
+}
+
+/* ペナルティ：自分の伏せカードを表にする */
+async function doPenalty(idx) {
+  if (!room || room.phase !== "penalty" || !isMyTurn()) return;
+  const r = clone(room);
+  const me = r.players[myUid];
+  const card = me.cards[idx];
+  if (!card || card.open) return;
+  card.open = true;
+  r.log.push(me.name + " は自分のカード（" + (card.c === "B" ? "黒" : "白") + card.n + "）を表にしました");
+  checkEliminations(r);
+  if (r.status !== "finished") endTurn(r);
+  await saveRoom(r);
+}
+
+/* 「やめる」：引いたカードを伏せて挿入してターン終了 */
+async function doStop() {
+  if (!room || room.phase !== "decide" || !isMyTurn() || !room.drawn) return;
+  const r = clone(room);
+  const me = r.players[myUid];
+  insertDrawn(r, me, false);
+  r.log.push(me.name + " は引いたカードを伏せて置きました");
+  endTurn(r);
+  await saveRoom(r);
+}
+/* 「続ける」 */
+async function doContinue() {
+  if (!room || room.phase !== "decide" || !isMyTurn()) return;
+  const r = clone(room);
+  r.phase = "attack";
+  await saveRoom(r);
+}
+
+/* ================= 描画 ================= */
+function cardEl(card, opts = {}) {
+  const d = document.createElement("div");
+  d.className = "card " + (card.c === "B" ? "b" : "w");
+  if (opts.faceUp) { d.textContent = card.n; if (card.open) d.classList.add("open"); }
+  else { d.classList.add("hidden-num"); d.textContent = ""; }
+  if (opts.targetable) {
+    d.classList.add("targetable");
+    d.addEventListener("click", opts.onClick);
+  }
+  if (opts.selected) d.classList.add("selected");
+  return d;
+}
+
+function render() {
+  if (!room) return;
+  if (room.status === "lobby") { renderLobby(); show("screen-lobby"); }
+  else { renderGame(); show("screen-game"); }
+  if (room.status === "finished" && !resultShown) { resultShown = true; renderResult(); }
+  if (room.status === "playing") resultShown = false;
+}
+
+function renderLobby() {
+  $("lobby-code").textContent = roomCode;
+  const seats = $("lobby-seats");
+  seats.innerHTML = "";
+  const ps = playersBySeat(room);
+  for (let i = 0; i < 4; i++) {
+    const p = ps.find((x) => x.seat === i);
+    const d = document.createElement("div");
+    if (p) {
+      d.className = "seat filled s" + i;
+      d.innerHTML = "";
+      const nm = document.createElement("div"); nm.className = "nm"; nm.textContent = p.name + (p.uid === myUid ? "（あなた）" : "");
+      const tag = document.createElement("div"); tag.className = "tag"; tag.textContent = room.hostUid === p.uid ? "ホスト" : "参加中";
+      d.append(nm, tag);
+    } else {
+      d.className = "seat empty";
+      d.textContent = "参加まち…";
+    }
+    seats.appendChild(d);
+  }
+  const isHost = room.hostUid === myUid;
+  $("btn-start").style.display = isHost ? "" : "none";
+  $("lobby-note").textContent = isHost
+    ? "2人以上そろったらスタートできるよ。コードを友達に教えてね。"
+    : "ホストがスタートを押すと対戦が始まります。";
+}
+
+function renderGame() {
+  $("game-code").textContent = roomCode;
+  const ps = playersBySeat(room);
+  const cp = currentPlayer(room);
+  const me = room.players[myUid];
+  const myTurn = isMyTurn();
+
+  /* バナー */
+  const banner = $("banner");
+  banner.classList.toggle("myturn", !!myTurn && room.status === "playing");
+  if (room.status === "finished") {
+    const w = ps.find((p) => p.seat === room.winnerSeat);
+    banner.textContent = "🏆 " + (w ? w.name : "") + " の勝ち！";
+  } else if (!me) {
+    banner.textContent = "観戦中…";
+  } else if (myTurn) {
+    banner.textContent =
+      room.phase === "draw" ? "あなたの番！ 山札をタップして引いてね" :
+      room.phase === "attack" ? "アタック！ 相手の伏せカードを選んで数字を宣言" :
+      room.phase === "continue" ? "当たり！ 続けてアタックできるよ" :
+      room.phase === "decide" ? "当たり！ 続ける？ それとも止める？" :
+      room.phase === "penalty" ? "ハズレ… 自分の伏せカードを1枚選んで表にしてね" : "";
+  } else {
+    banner.textContent = (cp ? cp.name : "") + " の番です…";
+  }
+
+  /* 相手エリア */
+  const opp = $("opponents");
+  opp.innerHTML = "";
+  for (const p of ps) {
+    if (p.uid === myUid) continue;
+    const block = document.createElement("div");
+    block.className = "player-block" + (cp && cp.uid === p.uid && room.status === "playing" ? " turn" : "") + (p.eliminated ? " dead" : "");
+    const head = document.createElement("div");
+    head.className = "player-head";
+    const who = document.createElement("span"); who.className = "who"; who.textContent = p.name;
+    if (p.eliminated) { const b = document.createElement("span"); b.className = "badge out"; b.textContent = "脱落"; who.appendChild(b); }
+    head.appendChild(who);
+    const cnt = document.createElement("span"); cnt.textContent = "伏せ " + p.cards.filter((c) => !c.open).length + " 枚";
+    head.appendChild(cnt);
+    block.appendChild(head);
+    const row = document.createElement("div"); row.className = "cards";
+    p.cards.forEach((card, idx) => {
+      const canTarget = myTurn && (room.phase === "attack" || room.phase === "continue") && !card.open && !p.eliminated && room.status === "playing";
+      row.appendChild(cardEl(card, {
+        faceUp: card.open,
+        targetable: canTarget,
+        selected: selectedTarget && selectedTarget.uid === p.uid && selectedTarget.idx === idx,
+        onClick: () => {
+          selectedTarget = { uid: p.uid, idx };
+          padTarget = { uid: p.uid, idx };
+          $("pad-title").textContent = p.name + " のカードは…？";
+          openSheet("pad-wrap");
+          renderGame();
+        }
+      }));
+    });
+    block.appendChild(row);
+    opp.appendChild(block);
+  }
+
+  /* 山札 */
+  const deckCard = $("deck-card");
+  $("deck-count").textContent = room.deck ? room.deck.length : 0;
+  if (room.deck && room.deck.length > 0) {
+    const top = room.deck[room.deck.length - 1];
+    deckCard.className = "deck-card " + (top.c === "B" ? "b" : "w") + (myTurn && room.phase === "draw" ? " clickable" : "");
+    deckCard.textContent = "?";
+  } else {
+    deckCard.className = "deck-card w";
+    deckCard.textContent = "0";
+  }
+
+  /* 引いたカード */
+  const dbox = $("drawn-box");
+  dbox.innerHTML = "";
+  if (room.drawn && room.status === "playing") {
+    const label = document.createElement("span");
+    label.textContent = myTurn ? "引いたカード：" : (cp ? cp.name : "") + " が引いたカード：";
+    const dc = document.createElement("div");
+    dc.className = "deck-card " + (room.drawn.c === "B" ? "b" : "w");
+    dc.textContent = myTurn ? room.drawn.n : "?"; // 数字は引いた本人だけ
+    dbox.append(label, dc);
+  }
+
+  /* 自分のエリア */
+  const myarea = $("myarea");
+  myarea.innerHTML = "";
+  if (me) {
+    const head = document.createElement("div");
+    head.className = "player-head";
+    head.innerHTML = "";
+    const who = document.createElement("span"); who.className = "who"; who.textContent = "あなたのカード";
+    if (me.eliminated) { const b = document.createElement("span"); b.className = "badge out"; b.textContent = "脱落"; who.appendChild(b); }
+    head.appendChild(who);
+    myarea.appendChild(head);
+    const row = document.createElement("div"); row.className = "cards";
+    me.cards.forEach((card, idx) => {
+      const el = cardEl(card, { faceUp: true });
+      if (myTurn && room.phase === "penalty" && !card.open) {
+        el.classList.add("targetable");
+        el.addEventListener("click", () => doPenalty(idx));
+      }
+      row.appendChild(el);
+    });
+    myarea.appendChild(row);
+  }
+
+  /* アクションボタン */
+  const act = $("actions");
+  act.innerHTML = "";
+  if (myTurn && room.phase === "decide" && room.status === "playing") {
+    const b1 = document.createElement("button"); b1.className = "btn pink"; b1.textContent = "続けてアタック";
+    b1.addEventListener("click", doContinue);
+    const b2 = document.createElement("button"); b2.className = "btn teal"; b2.textContent = "やめる";
+    b2.addEventListener("click", doStop);
+    act.append(b1, b2);
+  }
+
+  if ((room.log || []).length !== lastLogLen) { lastLogLen = (room.log || []).length; renderLog(); }
+}
+
+function renderLog() {
+  const body = $("log-body");
+  body.innerHTML = "";
+  for (const line of room ? (room.log || []) : []) {
+    const d = document.createElement("div");
+    d.textContent = line;
+    body.appendChild(d);
+  }
+  body.scrollTop = body.scrollHeight;
+}
+
+function renderResult() {
+  const ps = playersBySeat(room);
+  const w = ps.find((p) => p.seat === room.winnerSeat);
+  const iWin = w && w.uid === myUid;
+  $("result-title").textContent = iWin ? "あなたの勝ち！🎉" : (w ? w.name : "") + " の勝ち";
+  $("result-text").textContent = iWin ? "全員の数字を読み切ったね。お見事！" : "次は当てにいこう。ログで読み筋を振り返れるよ。";
+  const isHost = room.hostUid === myUid;
+  $("btn-rematch").style.display = isHost ? "" : "none";
+  $("rematch-note").textContent = isHost ? "" : "ホストが再戦を押すと、もう一戦始まります。";
+  $("result-wrap").classList.add("open");
+}
+</script>
+</body>
+</html>
